@@ -192,6 +192,7 @@ export default function App() {
       revenu: data.revenu,
       possede_actions: data.possede_actions,
       finance_charia: data.finance_charia,
+      connait_masi: data.connait_masi,
       q1: data.q1,
       q2: data.q2,
       q3: data.q3,

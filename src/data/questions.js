@@ -42,6 +42,12 @@ export const PROFILE_QUESTIONS = [
       'Utilisez-vous des produits financiers conformes à la Charia (finance participative) ?',
     options: ['Oui', 'Non', 'Je ne connais pas'],
   },
+  {
+    key: 'connait_masi',
+    label:
+      `Connaissiez-vous l'indice MASI (Moroccan All Shares Index) avant ce questionnaire ?`,
+    options: [`Oui, je le suivais déjà`, `Oui, j'en avais entendu parler`, `Non, c'est la première fois`],
+  },
 ]
 
 // ---- Partie 2 : culture financiere ("Big Three") --------------------

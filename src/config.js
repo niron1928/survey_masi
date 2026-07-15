@@ -9,7 +9,7 @@ export const REWARD = 200
 // Paliers de probabilite p (en %) de l'urne (Option B).
 //  - Mode "standard" (cahier des charges) : 20, 40, 60, 80.
 //  - Mode "fin" : decommentez la ligne 10..90 pour une mesure plus precise.
-export const P_STEPS = [20, 40, 60, 80]
+export const P_STEPS = [20, 35, 40, 50, 60, 85]
 // export const P_STEPS = [10, 20, 30, 40, 50, 60, 70, 80, 90] // mode fin
 
 // -----------------------------------------------------------------
