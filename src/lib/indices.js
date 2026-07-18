@@ -104,5 +104,29 @@ export function computeIndices(m) {
   return { m_s, m_c, indice_b, indice_a }
 }
 
+/**
+ * Contrôle de monotonie de Baillon : un événement composé (union)
+ * doit avoir une matching probability au moins égale à chacun de
+ * ses deux événements simples constituants.
+ *
+ * Vérifie les 6 inégalités :
+ *   m(E1∪E2) ≥ m(E1),  m(E1∪E2) ≥ m(E2)
+ *   m(E1∪E3) ≥ m(E1),  m(E1∪E3) ≥ m(E3)
+ *   m(E2∪E3) ≥ m(E2),  m(E2∪E3) ≥ m(E3)
+ *
+ * @param {{E1:number,E2:number,E3:number,E1E2:number,E1E3:number,E2E3:number}} m
+ * @returns {number} nombre de violations (0 à 6)
+ */
+export function countMonotonicityViolations(m) {
+  let v = 0
+  if (m.E1E2 < m.E1) v++
+  if (m.E1E2 < m.E2) v++
+  if (m.E1E3 < m.E1) v++
+  if (m.E1E3 < m.E3) v++
+  if (m.E2E3 < m.E2) v++
+  if (m.E2E3 < m.E3) v++
+  return v
+}
+
 // Codes des 6 evenements dans l'ordre canonique (pour l'export CSV).
 export const EVENT_CODES = ['E1', 'E2', 'E3', 'E1E2', 'E1E3', 'E2E3']

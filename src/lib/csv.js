@@ -5,16 +5,20 @@
 //  - decimales avec la virgule (','), coherent avec le separateur ';'
 // =====================================================================
 
-// Ordre exact des colonnes (cf. cahier des charges, section 8).
+// Ordre exact des colonnes (mise aux normes scientifiques).
 export const CSV_COLUMNS = [
   'id',
   'horodatage',
+  'session_start',
+  'duree_totale_sec',
   'age',
   'genre',
   'etudes',
-  'revenu',
   'possede_actions',
-  'finance_charia',
+  'connait_charia',
+  'utilise_charia',
+  'connait_masi',
+  'familiarite_masi',
   'q1',
   'q2',
   'q3',
@@ -29,17 +33,15 @@ export const CSV_COLUMNS = [
   'm_c',
   'indice_b',
   'indice_a',
-  'F1',
-  'F2',
-  'temps_par_tableau',
+  'revenu',
+  'intention_investir',
   'incoherent',
-  // --- donnees comportementales additionnelles ---
-  'session_start',
-  'duree_totale_sec',
-  'temps_par_ecran',
+  'violations_monotonie',
+  'ordre_evenements',
+  'temps_par_tableau',
   'nb_revisions',
   'nb_retours',
-  'ordre_evenements',
+  'ecran_abandon',
   'appareil',
   'largeur_ecran',
 ]
@@ -53,7 +55,7 @@ function num(x) {
 // Echappe une valeur pour le CSV (guillemets si necessaire).
 function cell(value) {
   const s = value === null || value === undefined ? '' : String(value)
-  if (/[";\n\r]/.test(s)) {
+  if (/[";;\n\r]/.test(s)) {
     return '"' + s.replace(/"/g, '""') + '"'
   }
   return s
@@ -64,37 +66,39 @@ function responseToRow(r) {
   return [
     r.id,
     r.horodatage,
+    r.session_start,
+    r.duree_totale_sec,
     r.age,
     r.genre,
     r.etudes,
-    r.revenu,
     r.possede_actions,
-    r.finance_charia,
+    r.connait_charia,
+    r.utilise_charia,
+    r.connait_masi,
+    r.familiarite_masi,
     r.q1,
     r.q2,
     r.q3,
     r.score_culture,
-    num(r.m.E1),
-    num(r.m.E2),
-    num(r.m.E3),
-    num(r.m.E1E2),
-    num(r.m.E1E3),
-    num(r.m.E2E3),
+    num(r.m?.E1),
+    num(r.m?.E2),
+    num(r.m?.E3),
+    num(r.m?.E1E2),
+    num(r.m?.E1E3),
+    num(r.m?.E2E3),
     num(r.m_s),
     num(r.m_c),
     num(r.indice_b),
     num(r.indice_a),
-    r.F1,
-    r.F2,
-    JSON.stringify(r.temps_par_tableau), // ex. {"E1":12,"E2":9,...}
+    r.revenu,
+    r.intention_investir,
     r.incoherent ? 'true' : 'false',
-    // --- donnees comportementales additionnelles ---
-    r.session_start,
-    r.duree_totale_sec,
-    JSON.stringify(r.temps_par_ecran || {}),
+    r.violations_monotonie,
+    Array.isArray(r.ordre_evenements) ? r.ordre_evenements.join('|') : r.ordre_evenements,
+    JSON.stringify(r.temps_par_tableau || {}),
     JSON.stringify(r.nb_revisions || {}),
     r.nb_retours,
-    Array.isArray(r.ordre_evenements) ? r.ordre_evenements.join('|') : r.ordre_evenements,
+    r.ecran_abandon ?? '',
     r.appareil,
     r.largeur_ecran,
   ]
@@ -104,7 +108,7 @@ function responseToRow(r) {
 export function buildCsv(responses) {
   const header = CSV_COLUMNS.join(';')
   const rows = responses.map((r) => responseToRow(r).map(cell).join(';'))
-  return '﻿' + [header, ...rows].join('\r\n') // BOM + CRLF
+  return '\uFEFF' + [header, ...rows].join('\r\n') // BOM + CRLF
 }
 
 // Declenche un telechargement de fichier (helper interne).

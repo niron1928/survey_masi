@@ -6,11 +6,20 @@
 // Montant hypothetique du gain (en DH) propose dans chaque pari.
 export const REWARD = 200
 
-// Paliers de probabilite p (en %) de l'urne (Option B).
-//  - Mode "standard" (cahier des charges) : 20, 40, 60, 80.
-//  - Mode "fin" : decommentez la ligne 10..90 pour une mesure plus precise.
-export const P_STEPS = [20, 35, 40, 50, 60, 85]
-// export const P_STEPS = [10, 20, 30, 40, 50, 60, 70, 80, 90] // mode fin
+// Paliers de probabilité (%) de l'urne (Option B).
+// Deux échelles distinctes (Baillon et al. 2018) :
+//  - SIMPLES : centrées autour de 1/3 (~0.33), pour E1, E2, E3
+//  - COMPOSÉS : centrées autour de 2/3 (~0.67), pour E1∪E2, E1∪E3, E2∪E3
+export const P_STEPS_SIMPLE = [5, 10, 20, 30, 40, 50, 65, 80]
+export const P_STEPS_COMPOSE = [20, 35, 50, 60, 70, 80, 90, 95]
+
+// Codes des événements simples (pour choisir la bonne échelle).
+const SIMPLES = new Set(['E1', 'E2', 'E3'])
+
+/** Retourne le tableau de paliers adapté au type d'événement. */
+export function pStepsFor(code) {
+  return SIMPLES.has(code) ? P_STEPS_SIMPLE : P_STEPS_COMPOSE
+}
 
 // -----------------------------------------------------------------
 // Envoi optionnel des reponses a un backend (voir README, section 8).

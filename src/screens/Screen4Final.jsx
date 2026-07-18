@@ -1,16 +1,20 @@
 import { useState } from 'react'
-import ScaleButtons from '../components/ScaleButtons.jsx'
+import RadioGroup from '../components/RadioGroup.jsx'
 import { SectionTitle, NavButtons } from './Screen1Profile.jsx'
 import { FINAL_QUESTIONS } from '../data/questions.js'
 
-// Ecran 4 : Partie 4 - questions finales (echelle 1 a 5).
+// Ecran 4 : Partie 4 - questions finales (revenu + intention d'investir).
+// Utilise desormais la NOTATION DIRECTE (RadioGroup) au lieu de l'echelle
+// d'accord / pas d'accord (Fowler, 2014 : moins de validite, biais
+// d'acquiescement). Le revenu est place en fin conformement aux bonnes
+// pratiques (question sensible).
 export default function Screen4Final({ data, update, onNext, onBack }) {
   const [error, setError] = useState('')
 
   function handleNext() {
     const missing = FINAL_QUESTIONS.find((q) => !data[q.key])
     if (missing) {
-      setError('Merci de répondre aux deux questions avant de terminer.')
+      setError('Merci de répondre à toutes les questions avant de terminer.')
       return
     }
     setError('')
@@ -21,15 +25,17 @@ export default function Screen4Final({ data, update, onNext, onBack }) {
     <div>
       <SectionTitle step="Partie 4 / 4" title="Pour finir" />
       <p className="mb-6 text-sm text-muted">
-        Indiquez votre degré d’accord, de 1 (pas du tout d’accord) à 5 (tout à fait d’accord).
+        Merci de répondre à ces dernières questions.
       </p>
 
-      <div className="grid gap-8">
+      <div className="grid gap-6">
         {FINAL_QUESTIONS.map((q) => (
-          <ScaleButtons
+          <RadioGroup
             key={q.key}
+            name={q.key}
             legend={q.label}
-            value={data[q.key] || null}
+            options={q.options}
+            value={data[q.key] || ''}
             onChange={(v) => update({ [q.key]: v })}
           />
         ))}

@@ -7,6 +7,7 @@ import Screen0bMasiIntro from './screens/Screen0bMasiIntro.jsx'
 import Screen1Profile from './screens/Screen1Profile.jsx'
 import Screen2Literacy from './screens/Screen2Literacy.jsx'
 import Screen3Intro from './screens/Screen3Intro.jsx'
+import Screen3Training from './screens/Screen3Training.jsx'
 import Screen3Ambiguity from './screens/Screen3Ambiguity.jsx'
 import Screen4Final from './screens/Screen4Final.jsx'
 import Screen5End from './screens/Screen5End.jsx'
@@ -14,9 +15,9 @@ import Dashboard from './screens/Dashboard.jsx'
 
 import { uuid } from './lib/uuid.js'
 import { EVENTS, LITERACY_QUESTIONS } from './data/questions.js'
-import { P_STEPS, BACKEND_URL, RESEARCHER_KEY, DASHBOARD_HASH } from './config.js'
-import { computeIndices, fromRawChoices } from './lib/indices.js'
-import { appendResponse, getResponses, loadProgress, saveProgress, clearProgress } from './lib/storage.js'
+import { pStepsFor, BACKEND_URL, RESEARCHER_KEY, DASHBOARD_HASH } from './config.js'
+import { computeIndices, fromRawChoices, countMonotonicityViolations } from './lib/indices.js'
+import { appendResponse, getResponses, loadProgress, saveProgress, clearProgress, saveAbandon } from './lib/storage.js'
 
 // Melange aleatoire (Fisher-Yates) : ordre des 6 evenements par participant.
 function shuffle(arr) {
@@ -41,7 +42,8 @@ function newSession() {
 
 // Cle d'un ecran, utilisee pour chronometrer le temps par ecran.
 function stepKey(step) {
-  return step.t === 'table' ? `table:${step.code}` : step.t
+  if (step.t === 'table') return `table:${step.code}`
+  return step.t
 }
 
 export default function App() {
@@ -76,15 +78,19 @@ export default function App() {
   const [data, setData] = useState(() => restored?.data ?? newSession())
   const [stepIndex, setStepIndex] = useState(() => restored?.stepIndex ?? 0)
 
-  // Construit dynamiquement la liste des etapes (inclut les 6 tableaux).
+  // Construit dynamiquement la liste des etapes.
+  // NOUVEL ORDRE (B3 + B4) :
+  //   welcome → profile (avec familiarité) → masiIntro → literacy
+  //   → ambigIntro → training → ...tables → final → end
   const steps = useMemo(() => {
     const tables = data.eventOrder.map((code) => ({ t: 'table', code }))
     return [
       { t: 'welcome' },
-      { t: 'masiIntro' },
       { t: 'profile' },
+      { t: 'masiIntro' },
       { t: 'literacy' },
       { t: 'ambigIntro' },
+      { t: 'training' },
       ...tables,
       { t: 'final' },
       { t: 'end' },
@@ -118,13 +124,26 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [stepIndex])
 
+  // --- C4 : tracking d'abandon (beforeunload) ---------------------
+  useEffect(() => {
+    function onBeforeUnload() {
+      if (step.t !== 'end') {
+        saveAbandon({ id: data.id, ecran_abandon: stepKey(step), horodatage: new Date().toISOString() })
+      }
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [data.id, step]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // --- Helpers de mise a jour --------------------------------------
   const update = (patch) => setData((d) => ({ ...d, ...patch }))
 
   // Enregistre le choix d'UNE ligne (mode libre) et compte les revisions.
+  // Utilise pStepsFor(code) pour determiner le bon nombre de lignes.
   const setChoice = (code, i, option) =>
     setData((d) => {
-      const arr = [...(d.ambig.choices[code] || P_STEPS.map(() => null))]
+      const pSteps = pStepsFor(code)
+      const arr = [...(d.ambig.choices[code] || pSteps.map(() => null))]
       arr[i] = option
       return {
         ...d,
@@ -164,16 +183,21 @@ export default function App() {
     )
 
     // Matching probability + incoherence, derivees des choix bruts (mode libre).
+    // Chaque evenement utilise sa propre echelle de paliers.
     const m = {}
     let incoherentAny = false
     for (const e of EVENTS) {
-      const choices = data.ambig.choices[e.code] || P_STEPS.map(() => null)
-      const res = fromRawChoices(choices, P_STEPS)
+      const pSteps = pStepsFor(e.code)
+      const choices = data.ambig.choices[e.code] || pSteps.map(() => null)
+      const res = fromRawChoices(choices, pSteps)
       m[e.code] = res.m
       if (res.incoherent) incoherentAny = true
     }
 
     const { m_s, m_c, indice_b, indice_a } = computeIndices(m)
+
+    // C5 : controle de monotonie de Baillon (ne bloque pas le participant).
+    const violations_monotonie = countMonotonicityViolations(m)
 
     // Donnees temporelles / comportementales
     const temps_par_ecran = collectTimes()
@@ -186,13 +210,16 @@ export default function App() {
     const response = {
       id: data.id,
       horodatage: new Date().toISOString(),
+      session_start: data.session_start,
+      duree_totale_sec,
       age: data.age,
       genre: data.genre,
       etudes: data.etudes,
-      revenu: data.revenu,
       possede_actions: data.possede_actions,
-      finance_charia: data.finance_charia,
+      connait_charia: data.connait_charia,
+      utilise_charia: data.utilise_charia || '',
       connait_masi: data.connait_masi,
+      familiarite_masi: data.familiarite_masi,
       q1: data.q1,
       q2: data.q2,
       q3: data.q3,
@@ -202,17 +229,17 @@ export default function App() {
       m_c,
       indice_b,
       indice_a,
-      F1: data.F1,
-      F2: data.F2,
-      temps_par_tableau,
+      revenu: data.revenu,
+      intention_investir: data.intention_investir,
       incoherent: incoherentAny,
+      violations_monotonie,
       // --- comportemental ---
-      session_start: data.session_start,
-      duree_totale_sec,
       temps_par_ecran,
+      temps_par_tableau,
       nb_revisions: data.ambig.revisions,
       nb_retours: retoursRef.current,
       ordre_evenements: data.eventOrder,
+      ecran_abandon: null, // completion reussie
       appareil: typeof navigator !== 'undefined' ? navigator.userAgent.slice(0, 180) : '',
       largeur_ecran: typeof window !== 'undefined' ? window.innerWidth : '',
     }
@@ -269,14 +296,16 @@ export default function App() {
     switch (step.t) {
       case 'welcome':
         return <Screen0Welcome onNext={goNext} />
-      case 'masiIntro':
-        return <Screen0bMasiIntro onNext={goNext} onBack={goBack} />
       case 'profile':
         return <Screen1Profile data={data} update={update} onNext={goNext} onBack={goBack} />
+      case 'masiIntro':
+        return <Screen0bMasiIntro onNext={goNext} onBack={goBack} />
       case 'literacy':
         return <Screen2Literacy data={data} update={update} onNext={goNext} onBack={goBack} />
       case 'ambigIntro':
         return <Screen3Intro onNext={goNext} onBack={goBack} />
+      case 'training':
+        return <Screen3Training onNext={goNext} onBack={goBack} />
       case 'table': {
         const event = EVENTS.find((e) => e.code === step.code)
         const displayIndex = data.eventOrder.indexOf(step.code) + 1
@@ -342,13 +371,13 @@ function KeyGate({ onUnlock }) {
       <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-edge bg-surface p-6">
         <p className="font-mono text-xs uppercase tracking-widest text-info">Accès réservé</p>
         <h1 className="mt-1 text-xl font-bold text-ink">Tableau de bord chercheur</h1>
-        <p className="mt-2 text-sm text-muted">Entrez la clé d’accès pour consulter les résultats.</p>
+        <p className="mt-2 text-sm text-muted">Entrez la clé d'accès pour consulter les résultats.</p>
         <input
           type="password"
           value={key}
           onChange={(e) => setKey(e.target.value)}
           autoFocus
-          placeholder="Clé d’accès"
+          placeholder="Clé d'accès"
           className="mt-4 w-full rounded-xl border border-edge bg-night px-4 py-3 font-mono text-ink outline-none focus:border-info"
         />
         {error && <p className="mt-2 text-sm text-down">{error}</p>}

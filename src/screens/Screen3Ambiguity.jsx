@@ -3,7 +3,8 @@ import Candlestick from '../components/Candlestick.jsx'
 import Urne from '../components/Urne.jsx'
 import OrderButton from '../components/OrderButton.jsx'
 import { NavButtons } from './Screen1Profile.jsx'
-import { P_STEPS } from '../config.js'
+import { pStepsFor } from '../config.js'
+import { detectIncoherent } from '../lib/indices.js'
 
 // Ecran 3.x : UNE liste de choix pour UN evenement.
 //
@@ -14,20 +15,29 @@ import { P_STEPS } from '../config.js'
 //  - la matching probability et l'eventuelle incoherence (bascule multiple)
 //    sont calculees en aval, a partir des choix bruts (voir lib/indices.js).
 //
+// DEUX ECHELLES DISTINCTES (Baillon et al. 2018) :
+//  - Evenements simples  (E1, E2, E3)          : P_STEPS_SIMPLE
+//  - Evenements composes (E1E2, E1E3, E2E3)    : P_STEPS_COMPOSE
+//  L'echelle est determinee automatiquement via pStepsFor(event.code).
+//
 // Props :
-//  - event    : { code, name, cond, optionA, tone }
+//  - event    : { code, name, cond, optionA, tone, type }
 //  - index    : rang d'affichage (1..6)
 //  - total    : nombre total de tableaux (6)
-//  - choices  : tableau des choix par ligne ('A'|'B'|null), longueur = P_STEPS
+//  - choices  : tableau des choix par ligne ('A'|'B'|null), longueur = pSteps
 //  - onChoose : (rowIndex, option) => void   (met a jour UNE seule ligne)
 //  - onNext / onBack
 export default function Screen3Ambiguity({ event, index, total, choices, onChoose, onNext, onBack }) {
   const [error, setError] = useState('')
-  const rows = choices ?? P_STEPS.map(() => null)
+  const [showZigzagWarning, setShowZigzagWarning] = useState(false)
+
+  const pSteps = pStepsFor(event.code)
+  const rows = choices ?? pSteps.map(() => null)
 
   function choose(i, option) {
     onChoose(i, option)
     setError('')
+    setShowZigzagWarning(false)
   }
 
   function handleNext() {
@@ -36,6 +46,22 @@ export default function Screen3Ambiguity({ event, index, total, choices, onChoos
       setError('Merci de faire un choix (marché ou urne) sur chacune des lignes.')
       return
     }
+
+    // C6 : avertissement doux NON bloquant en cas de zigzag (A->B->A).
+    const zigzag = detectIncoherent(rows.filter(Boolean))
+    if (zigzag && !showZigzagWarning) {
+      setShowZigzagWarning(true)
+      setError('')
+      return
+    }
+
+    setShowZigzagWarning(false)
+    onNext()
+  }
+
+  // Force le passage malgre le zigzag.
+  function forceNext() {
+    setShowZigzagWarning(false)
     onNext()
   }
 
@@ -77,19 +103,19 @@ export default function Screen3Ambiguity({ event, index, total, choices, onChoos
           </div>
           <p className="text-sm text-ink">
             Gagner <strong>200 DH</strong> si une boule <span className="text-up">verte</span> sort
-            d’une urne de 100 boules. La probabilité change à chaque ligne ci-dessous.
+            d'une urne de 100 boules. La probabilité change à chaque ligne ci-dessous.
           </p>
         </div>
       </div>
 
       <p className="mt-4 text-sm text-muted">
         Pour chaque ligne, indiquez ce que vous préférez : parier sur le marché (Option A) ou sur
-        l’urne (Option B). <strong className="text-ink">Vous êtes libre de choisir chaque ligne.</strong>
+        l'urne (Option B). <strong className="text-ink">Vous êtes libre de choisir chaque ligne.</strong>
       </p>
 
       {/* La liste de choix, ligne par ligne (choix independant) */}
       <div className="mt-3 grid gap-3">
-        {P_STEPS.map((p, i) => {
+        {pSteps.map((p, i) => {
           const sel = rows[i]
           return (
             <div
@@ -122,16 +148,43 @@ export default function Screen3Ambiguity({ event, index, total, choices, onChoos
                 <span className="block text-[11px] font-normal text-muted">
                   urne à {p} % ({p} vertes) — je préfère
                 </span>
-                PARIER SUR L’URNE
+                PARIER SUR L'URNE
               </OrderButton>
             </div>
           )
         })}
       </div>
 
+      {/* C6 : avertissement doux en cas de zigzag (non bloquant) */}
+      {showZigzagWarning && (
+        <div className="mt-4 rounded-xl border border-yellow-500/40 bg-yellow-500/10 p-4">
+          <p className="text-sm text-yellow-300">
+            Vous avez changé plusieurs fois d'avis dans ce tableau. Habituellement, on préfère
+            le marché tant que l'urne offre peu de chances, puis l'urne au-delà d'un certain
+            niveau. Souhaitez-vous revoir vos réponses ?
+          </p>
+          <div className="mt-3 flex gap-3">
+            <button
+              type="button"
+              onClick={() => setShowZigzagWarning(false)}
+              className="rounded-lg border border-edge bg-surface px-4 py-2 text-sm text-muted hover:text-ink"
+            >
+              Revoir mes réponses
+            </button>
+            <button
+              type="button"
+              onClick={forceNext}
+              className="rounded-lg border border-info bg-info/20 px-4 py-2 text-sm font-bold text-info hover:bg-info/30"
+            >
+              Continuer quand même ▸
+            </button>
+          </div>
+        </div>
+      )}
+
       {error && <p className="mt-4 text-sm text-down">{error}</p>}
 
-      <NavButtons onBack={onBack} onNext={handleNext} />
+      {!showZigzagWarning && <NavButtons onBack={onBack} onNext={handleNext} />}
     </div>
   )
 }

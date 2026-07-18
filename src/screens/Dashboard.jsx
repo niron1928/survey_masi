@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { downloadCsv, downloadJson } from '../lib/csv.js'
-import { clearResponses } from '../lib/storage.js'
+import { clearResponses, getAbandons, clearAbandons } from '../lib/storage.js'
 import { EVENT_CODES } from '../lib/indices.js'
 
 // =====================================================================
@@ -37,6 +37,7 @@ const fmt = (x, d = 2) => (Number.isNaN(x) || x === undefined ? '—' : x.toFixe
 export default function Dashboard({ responses, onExit, onCleared }) {
   const [n, setN] = useState(responses.length)
   const data = responses
+  const abandons = getAbandons()
 
   const stats = useMemo(() => {
     if (!data.length) return null
@@ -51,13 +52,14 @@ export default function Dashboard({ responses, onExit, onCleared }) {
       pctTolerant: pct(data, (r) => r.indice_b < 0),
       pctInsensible: pct(data, (r) => r.indice_a > 0),
       meanCulture: mean(data.map((r) => r.score_culture)),
-      meanF1: mean(data.map((r) => r.F1)),
-      meanF2: mean(data.map((r) => r.F2)),
+      // Nouvelles cles (notation directe au lieu de Likert)
+      meanViolations: mean(data.map((r) => r.violations_monotonie)),
       pctIncoherent: pct(data, (r) => r.incoherent),
       meanDuree: mean(data.map((r) => r.duree_totale_sec)),
-      // Lien central de l'etude : intention d'investir (F2) selon l'attitude
-      f2Averse: mean(averse.map((r) => r.F2)),
-      f2NonAverse: mean(nonAverse.map((r) => r.F2)),
+      // Constat central : intention d'investir selon l'attitude
+      // intention_investir est maintenant une chaine, on la code en score pour la moyenne
+      intentionAverse: countIntention(averse),
+      intentionNonAverse: countIntention(nonAverse),
       mByEvent: EVENT_CODES.map((c) => ({ code: c, label: EVENT_LABEL[c], value: mean(data.map((r) => r.m?.[c])) })),
       bs,
     }
@@ -66,6 +68,7 @@ export default function Dashboard({ responses, onExit, onCleared }) {
   function handleClear() {
     if (window.confirm('Effacer DÉFINITIVEMENT toutes les réponses de cet appareil ? Exportez le CSV avant.')) {
       clearResponses()
+      clearAbandons()
       setN(0)
       onCleared?.()
     }
@@ -115,7 +118,7 @@ export default function Dashboard({ responses, onExit, onCleared }) {
 
         {!n || !stats ? (
           <div className="rounded-2xl border border-edge bg-surface p-8 text-center text-muted">
-            Aucune réponse enregistrée sur cet appareil pour l’instant.
+            Aucune réponse enregistrée sur cet appareil pour l'instant.
           </div>
         ) : (
           <>
@@ -129,17 +132,20 @@ export default function Dashboard({ responses, onExit, onCleared }) {
               <Stat label="% tolérants (b<0)" value={fmt(stats.pctTolerant, 0) + ' %'} tone="down" />
               <Stat label="% insensibles (a>0)" value={fmt(stats.pctInsensible, 0) + ' %'} tone="info" />
               <Stat label="% incohérents" value={fmt(stats.pctIncoherent, 0) + ' %'} tone={stats.pctIncoherent > 20 ? 'down' : 'muted'} />
+              <Stat label="Violations monotonie moy." value={fmt(stats.meanViolations, 1)} tone={stats.meanViolations > 1 ? 'down' : 'muted'} />
+              <Stat label="Culture fin. moy." value={fmt(stats.meanCulture, 1) + '/3'} mono />
+              <Stat label="Abandons (ce navigateur)" value={abandons.length} mono />
+              <Stat label="Taux complétion" value={n + abandons.length > 0 ? fmt((100 * n) / (n + abandons.length), 0) + ' %' : '—'} tone="info" />
             </div>
 
             {/* Constat central de l'etude */}
             <div className="mt-4 rounded-2xl border border-edge bg-surface p-5">
               <p className="font-mono text-xs uppercase tracking-widest text-info">Constat principal</p>
               <p className="mt-2 text-sm text-ink">
-                Intention d’investir (F2, sur 5) — averses à l’ambiguïté :{' '}
-                <strong className="text-down">{fmt(stats.f2Averse)}</strong> · non-averses :{' '}
-                <strong className="text-up">{fmt(stats.f2NonAverse)}</strong>. Culture financière
-                moyenne : <strong>{fmt(stats.meanCulture, 1)}</strong>/3 · Familiarité MASI (F1) :{' '}
-                <strong>{fmt(stats.meanF1, 1)}</strong>/5.
+                Intention d'investir — averses à l'ambiguïté :{' '}
+                <strong className="text-down">{stats.intentionAverse}</strong> · non-averses :{' '}
+                <strong className="text-up">{stats.intentionNonAverse}</strong>. Culture financière
+                moyenne : <strong>{fmt(stats.meanCulture, 1)}</strong>/3.
               </p>
             </div>
 
@@ -155,11 +161,34 @@ export default function Dashboard({ responses, onExit, onCleared }) {
                   Repère à 1/3 (équiprobabilité). Simples (E1–E3) vs composés (unions).
                 </p>
               </ChartCard>
-              <ChartCard title="Distribution de l’indice b (aversion)">
+              <ChartCard title="Distribution de l'indice b (aversion)">
                 <Histogram values={stats.bs} min={-1} max={1} bins={9} />
-                <p className="mt-2 text-[11px] text-muted">À droite de 0 = aversion à l’ambiguïté.</p>
+                <p className="mt-2 text-[11px] text-muted">À droite de 0 = aversion à l'ambiguïté.</p>
               </ChartCard>
             </div>
+
+            {/* Abandons (C4) */}
+            {abandons.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-edge bg-surface p-4">
+                <p className="mb-3 font-mono text-xs uppercase tracking-widest text-info">
+                  Abandons ({abandons.length})
+                </p>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {Object.entries(
+                    abandons.reduce((acc, a) => {
+                      const k = a.ecran_abandon || 'inconnu'
+                      acc[k] = (acc[k] || 0) + 1
+                      return acc
+                    }, {}),
+                  ).map(([ecran, count]) => (
+                    <div key={ecran} className="rounded-lg border border-edge bg-black/20 p-2">
+                      <p className="font-mono text-[11px] text-muted">{ecran}</p>
+                      <p className="text-lg font-bold text-ink">{count}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Tableau brut */}
             <div className="mt-4 rounded-2xl border border-edge bg-surface p-4">
@@ -170,7 +199,7 @@ export default function Dashboard({ responses, onExit, onCleared }) {
                 <table className="w-full border-collapse text-left font-mono text-xs">
                   <thead className="text-muted">
                     <tr>
-                      {['#', 'horodatage', 'âge', 'genre', 'culture', 'b', 'a', 'F1', 'F2', 'durée', 'incoh.'].map((h) => (
+                      {['#', 'horodatage', 'âge', 'genre', 'culture', 'b', 'a', 'famil.', 'intent.', 'durée', 'monot.', 'incoh.'].map((h) => (
                         <th key={h} className="border-b border-edge px-2 py-1.5">{h}</th>
                       ))}
                     </tr>
@@ -185,9 +214,10 @@ export default function Dashboard({ responses, onExit, onCleared }) {
                         <td className="border-b border-edge/50 px-2 py-1.5">{r.score_culture}/3</td>
                         <td className={`border-b border-edge/50 px-2 py-1.5 ${r.indice_b > 0 ? 'text-up' : 'text-down'}`}>{fmt(r.indice_b)}</td>
                         <td className="border-b border-edge/50 px-2 py-1.5 text-info">{fmt(r.indice_a)}</td>
-                        <td className="border-b border-edge/50 px-2 py-1.5">{r.F1}</td>
-                        <td className="border-b border-edge/50 px-2 py-1.5">{r.F2}</td>
+                        <td className="border-b border-edge/50 px-2 py-1.5">{r.familiarite_masi?.slice(0, 6) || '—'}</td>
+                        <td className="border-b border-edge/50 px-2 py-1.5">{r.intention_investir?.slice(0, 8) || '—'}</td>
                         <td className="border-b border-edge/50 px-2 py-1.5">{r.duree_totale_sec}s</td>
+                        <td className={`border-b border-edge/50 px-2 py-1.5 ${r.violations_monotonie > 0 ? 'text-down' : ''}`}>{r.violations_monotonie ?? '—'}</td>
                         <td className="border-b border-edge/50 px-2 py-1.5">{r.incoherent ? '⚠' : ''}</td>
                       </tr>
                     ))}
@@ -200,6 +230,22 @@ export default function Dashboard({ responses, onExit, onCleared }) {
       </div>
     </div>
   )
+}
+
+// ---- helpers --------------------------------------------------------
+
+// Compte la distribution des reponses d'intention pour un groupe.
+function countIntention(group) {
+  if (!group.length) return '—'
+  const counts = {}
+  for (const r of group) {
+    const v = r.intention_investir || '—'
+    counts[v] = (counts[v] || 0) + 1
+  }
+  // Retourne la reponse la plus frequente avec le pourcentage
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+  const top = sorted[0]
+  return `${top[0]} (${Math.round((100 * top[1]) / group.length)}%)`
 }
 
 // ---- sous-composants d'affichage ------------------------------------
